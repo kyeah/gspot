@@ -150,9 +150,10 @@ def main():
     s = login_spotify()
 
     # Filter playlists by config and last sync
-    if len(sys.argv) > 1:
+    if config.playlists:
         g.playlists = [p for p in g.playlists
-                       if p['name'] in sys.argv[1:] 
+                       if p['name'] in config.playlists
+                       and p['name'] not in config.exclude
                        and float(p['lastModifiedTimestamp']) > float(config.since)]
 
     # Transfer playlists
