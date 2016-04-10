@@ -24,15 +24,15 @@ auth = {
 }
 ```
 
-If you are having difficulties with authorization, try allowing [less secure apps](https://www.google.com/settings/security/lesssecureapps).
-
 Your Spotify username can be found in the URL of one of your playlists. For example,
 
 `https://play.spotify.com/user/<username>/playlist/3TkXkxeATeck7XRbQdqX7W`
 
 Instead of logging into Spotify, gspot will walk you through creating an access token.
 
-## Synchronizing All Playlists
+If you are having difficulties with Google authorization, try allowing [less secure apps](https://www.google.com/settings/security/lesssecureapps).
+
+## Selective Synchronization
 
 By default, gspot will synchronize all of your Google Music playlists to Spotify. You can specify specific playlists to synchronize or exclude through the config.
 

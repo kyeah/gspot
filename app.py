@@ -132,14 +132,14 @@ def find_track_id(g, s, track):
             artist = g.library[track['trackId']]['artist']
 
     results = s.search('track:%s artist:%s' % (name, artist))['tracks']['items']
-    if len(results) > 0:
+    if results:
         return (True, results[0]['id'])
     else:
         # Spotify and Google Music handle collaborations differently :(
         name = strip_feat(name)
         artist = strip_feat(strip_amp(artist))
         results = s.search('track:%s artist:%s' % (name, artist))['tracks']['items']
-        if len(results) > 0:
+        if results:
             return (True, results[0]['id'])
         else:
             return (False, "%s - %s" % (name, artist))
