@@ -150,11 +150,11 @@ def main():
     s = login_spotify()
 
     # Filter playlists by config and last sync
-    if config.playlists:
-        g.playlists = [p for p in g.playlists
-                       if p['name'] in config.playlists
-                       and p['name'] not in config.exclude
-                       and float(p['lastModifiedTimestamp']) > float(config.since)]
+    g.playlists = [p for p in g.playlists
+                   if (not config.playlists or 
+                       p['name'] in config.playlists)
+                   and p['name'] not in config.exclude
+                   and float(p['lastModifiedTimestamp']) > float(config.since)]
 
     # Transfer playlists
     tasks = []
