@@ -1,13 +1,16 @@
 import asyncio
 import config
-import re
 import json
+import logging
+import re
 import spotipy.util as util
 import sys
 
 from getpass import getpass
 from gmusicapi import Mobileclient
 from spotipy import Spotify
+
+logging.basicConfig(filename='.log', level=logging.INFO)
 
 def strip_feat(s):
     return re.sub(r"\(feat.*\)", "", s)
@@ -37,13 +40,13 @@ def login_google():
                         Mobileclient.FROM_MAC_ADDRESS)
 
     if not g.is_authenticated():
-        uprint("Invalid Google username/password")
+        logging.error("Invalid Google email/password; exiting.")
         sys.exit(1)
 
-    print("gettin' user playlist contents from google")
+    logging.info("Retrieving Google Music playlists")
     g.playlists = g.get_all_user_playlist_contents()
 
-    print("gettin' library")
+    logging.info("Retrieving Google Music library")
     g.library = get_google_library(g)
 
     return g
@@ -53,7 +56,7 @@ def login_spotify():
     token = util.prompt_for_user_token(config.auth['SPOTIFY_EMAIL'], scope)
 
     if not token:
-        uprint("Invalid Spotify token")
+        logging.error("Invalid Spotify token; exiting.")
         sys.exit(1)
 
     s = Spotify(auth=token)
@@ -73,15 +76,15 @@ def transfer_playlist(g, s, playlist):
 
     spotlist = {}
     if playlist['name'] not in s.playlist_names:
-        print("Creating playlist '{}'".format(playlist['name']))
+        logging.info("Creating playlist '%s'" % playlist['name'])
         spotlist = s.user_playlist_create(s.username, playlist['name'])
     else:
-        print("Updating playlist '{}'".format(playlist['name']))
+        logging.info("Updating playlist '%s'" % playlist['name'])
         spotlist = s.playlists[playlist['name']]
 
     tasks = []
     for track in playlist['tracks']:
-        if int(track['creationTimestamp']) > config.created_since:
+        if float(track['creationTimestamp']) > float(config.since):
             future = asyncio.ensure_future(find_track_id(g, s, track))
             tasks.append(future)
 
@@ -91,13 +94,13 @@ def transfer_playlist(g, s, playlist):
     track_ids = [track_id for (ok, track_id) in track_id_results if ok]
     not_found = [track_info for (ok, track_info) in track_id_results if not ok]
     for nf in not_found:
-        print(nf)
+        logging.warning("Track not found for '%s': '%s'" % (playlist['name'], nf))
 
     spotinfo = s.user_playlist(s.username, playlist_id=spotlist['id'])
     spottracks = [x['track']['id'] for x in spotinfo['tracks']['items']]
     new_ids = [x for x in track_ids if x not in spottracks]
 
-    print("Adding {} new tracks!!!!!!".format(len(new_ids)))
+    logging.info("Adding %d new tracks to '%s'!!!!!!" % (len(new_ids), playlist['name']))
     for group in chunker(new_ids, 100):
         s.user_playlist_add_tracks(s.username, spotlist['id'], group)
 
@@ -117,17 +120,17 @@ def find_track_id(g, s, track):
             name = g.library[track['trackId']]['title']
             artist = g.library[track['trackId']]['artist']
 
-    results = s.search('track:{} artist:{}'.format(name, artist))['tracks']['items']
+    results = s.search('track:%s artist:%s' % (name, artist))['tracks']['items']
     if len(results) > 0:
         return (True, results[0]['id'])
     else:
         name = strip_feat(name)
         artist = strip_feat(strip_amp(artist))
-        results = s.search('track:{} artist:{}'.format(name, artist))['tracks']['items']
+        results = s.search('track:%s artist:%s' % (name, artist))['tracks']['items']
         if len(results) > 0:
             return (True, results[0]['id'])
         else:
-            return (False, "{} - {}".format(name, artist))
+            return (False, "%s - %s" % (name, artist))
 
 def main():
 
@@ -135,7 +138,9 @@ def main():
     s = login_spotify()
 
     if len(sys.argv) > 1:
-        g.playlists = [p for p in g.playlists if p['name'] in sys.argv[1:]]
+        g.playlists = [p for p in g.playlists
+                       if p['name'] in sys.argv[1:] 
+                       and float(p['lastModifiedTimestamp']) > float(config.since)]
 
     # Transfer playlists
     print("time to transfer some playlistssss")
