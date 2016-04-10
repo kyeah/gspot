@@ -37,16 +37,16 @@ If you are having difficulties with Google authorization, try allowing [less sec
 By default, gspot will synchronize all of your Google Music playlists to Spotify. You can specify specific playlists to synchronize or exclude through the config.
 
 ```python
-playlists = {
+playlists = [
   "Chill",
   "Hella Chill",
   "Aww yeah",
-}
+]
 ```
 
 ```python
-exclude = {
+exclude = [
   "Not Chill",
   "Secret Stash",
-}
+]
 ```
