@@ -1,6 +1,5 @@
 import asyncio
 import config
-import json
 import logging
 import re
 import spotipy.util as util
@@ -10,7 +9,9 @@ from getpass import getpass
 from gmusicapi import Mobileclient
 from spotipy import Spotify
 
-logging.basicConfig(filename='.log', level=logging.INFO)
+logging.basicConfig(filename='.log', level=logging.INFO,
+                    format="%(asctime)s;%(levelname)s;%(message)s",
+                    datefmt="%Y-%m-%d %H:%M:%S")
 
 def strip_feat(s):
     return re.sub(r"\(feat.*\)", "", s)
@@ -20,9 +21,6 @@ def strip_ft(s):
 
 def strip_amp(s):
     return re.sub("&.*", "", s)
-
-def pprint(stuff):
-    print(json.dumps(stuff, indent=4, separators=(',', ': ')))
 
 def chunker(seq, size):
     return (seq[pos:pos + size] for pos in range(0, len(seq), size))
@@ -34,6 +32,8 @@ def get_google_library(g):
     return dic
 
 def login_google():
+    """ Log into Google and retrieve user library and playlists """
+
     g = Mobileclient()
     logged_in = g.login(config.auth['GOOGLE_EMAIL'], 
                         config.auth['GOOGLE_PASSWORD'],
@@ -52,6 +52,8 @@ def login_google():
     return g
 
 def login_spotify():
+    """ Log into Spotify and retrieve user playlists """
+
     scope = 'playlist-modify-public playlist-modify-private'
     token = util.prompt_for_user_token(config.auth['SPOTIFY_EMAIL'], scope)
 
@@ -68,20 +70,21 @@ def login_spotify():
     for sl in playlists:
         s.playlists[sl['name']] = sl
 
-    s.playlist_names = s.playlists.keys()
     return s
 
 @asyncio.coroutine
 def transfer_playlist(g, s, playlist):
+    """ Synchronize Google Music playlist to Spotify """
+    
+    # Retrieve or create associated Spotify playlist
+    name = playlist['name']
+    spotlist = s.playlists.get(name,
+                               s.user_playlist_create(s.username, name))
 
-    spotlist = {}
-    if playlist['name'] not in s.playlist_names:
-        logging.info("Creating playlist '%s'" % playlist['name'])
-        spotlist = s.user_playlist_create(s.username, playlist['name'])
-    else:
-        logging.info("Updating playlist '%s'" % playlist['name'])
-        spotlist = s.playlists[playlist['name']]
+    action = "Updating" if name in s.playlists else "Creating"
+    logging.info("%s playlist '%s'" % (action, name))
 
+    # Find Spotify track IDs for each new song
     tasks = []
     for track in playlist['tracks']:
         if float(track['creationTimestamp']) > float(config.since):
@@ -89,34 +92,42 @@ def transfer_playlist(g, s, playlist):
             tasks.append(future)
 
     done, _ = yield from asyncio.wait(tasks)
+    results = [task.result() for task in done]
 
-    track_id_results = [task.result() for task in done]
-    track_ids = [track_id for (ok, track_id) in track_id_results if ok]
-    not_found = [track_info for (ok, track_info) in track_id_results if not ok]
+    track_ids, not_found = [], []
+    for (ok, track_info) in results:
+        (track_ids if ok else not_found).append(track_info)
+
     for nf in not_found:
-        logging.warning("Track not found for '%s': '%s'" % (playlist['name'], nf))
+        logging.warning("Track not found for '%s': '%s'" % (name, nf))
 
-    spotinfo = s.user_playlist(s.username, playlist_id=spotlist['id'])
-    spottracks = [x['track']['id'] for x in spotinfo['tracks']['items']]
-    new_ids = [x for x in track_ids if x not in spottracks]
+    # Filter for songs not yet synchronized to Spotify
+    spotlist_info = s.user_playlist(s.username, playlist_id=spotlist['id'])
+    spotlist_tracks = [x['track']['id'] for x in spotlist_info['tracks']['items']]
+    new_ids = [x for x in track_ids if x not in spotlist_tracks]
 
-    logging.info("Adding %d new tracks to '%s'!!!!!!" % (len(new_ids), playlist['name']))
+    # Add new songs!!!
+    logging.info("Adding %d new tracks to '%s'!!!!!!" % (len(new_ids), name))
     for group in chunker(new_ids, 100):
         s.user_playlist_add_tracks(s.username, spotlist['id'], group)
 
 @asyncio.coroutine
 def find_track_id(g, s, track):
-    name = ""
-    artist = ""
+    """ Find Spotify ID for associated Google Music track """
+
+    name, artist = "", ""
+
     if "name" in track:
         name = track['title']
         artist = track['artist']
     else:
         if track['trackId'].startswith('T'):
+            # Retrieve store track info
             tr = g.get_track_info(track['trackId'])
             name = tr['title']
             artist = tr['artist']
         else:
+            # Retrieve personal track info
             name = g.library[track['trackId']]['title']
             artist = g.library[track['trackId']]['artist']
 
@@ -124,6 +135,7 @@ def find_track_id(g, s, track):
     if len(results) > 0:
         return (True, results[0]['id'])
     else:
+        # Spotify and Google Music handle collaborations differently :(
         name = strip_feat(name)
         artist = strip_feat(strip_amp(artist))
         results = s.search('track:%s artist:%s' % (name, artist))['tracks']['items']
@@ -137,13 +149,13 @@ def main():
     g = login_google()
     s = login_spotify()
 
+    # Filter playlists by config and last sync
     if len(sys.argv) > 1:
         g.playlists = [p for p in g.playlists
                        if p['name'] in sys.argv[1:] 
                        and float(p['lastModifiedTimestamp']) > float(config.since)]
 
     # Transfer playlists
-    print("time to transfer some playlistssss")
     tasks = []
     for playlist in g.playlists:
         future = asyncio.ensure_future(transfer_playlist(g, s, playlist))
