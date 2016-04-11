@@ -78,8 +78,8 @@ def transfer_playlist(g, s, playlist):
     
     # Retrieve or create associated Spotify playlist
     name = playlist['name']
-    spotlist = s.playlists.get(name,
-                               s.user_playlist_create(s.username, name))
+    spotlist = s.playlists.get(name, None) \
+               or s.user_playlist_create(s.username, name)
 
     action = "Updating" if name in s.playlists else "Creating"
     logging.info("%s playlist '%s'" % (action, name))
@@ -88,11 +88,10 @@ def transfer_playlist(g, s, playlist):
     tasks = []
     for track in playlist['tracks']:
         if float(track['creationTimestamp']) > float(config.since):
-            future = asyncio.ensure_future(find_track_id(g, s, track))
-            tasks.append(future)
+            task = asyncio.Task(find_track_id(g, s, track))
+            tasks.append(task)
 
-    done, _ = yield from asyncio.wait(tasks)
-    results = [task.result() for task in done]
+    results = yield from asyncio.gather(*tasks)
 
     track_ids, not_found = [], []
     for (ok, track_info) in results:
