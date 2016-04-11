@@ -9,9 +9,15 @@ from getpass import getpass
 from gmusicapi import Mobileclient
 from spotipy import Spotify
 
-logging.basicConfig(filename='.log', level=logging.INFO,
-                    format="%(asctime)s;%(levelname)s;%(message)s",
-                    datefmt="%Y-%m-%d %H:%M:%S")
+formatter = logging.Formatter("%(asctime)s;%(levelname)s;%(message)s",
+                              datefmt="%Y-%m-%d %H:%M:%S")
+
+handler = logging.FileHandler('.log')
+handler.setLevel(logging.INFO)
+handler.setFormatter(formatter)
+
+log = logging.getLogger(__name__)
+log.addHandler(handler)
 
 def strip_feat(s):
     return re.sub(r"\(feat.*\)", "", s)
@@ -40,13 +46,13 @@ def login_google():
                         Mobileclient.FROM_MAC_ADDRESS)
 
     if not g.is_authenticated():
-        logging.error("Invalid Google email/password; exiting.")
+        log.error("Invalid Google email/password; exiting.")
         sys.exit(1)
 
-    logging.info("Retrieving Google Music playlists")
+    log.info("Retrieving Google Music playlists")
     g.playlists = g.get_all_user_playlist_contents()
 
-    logging.info("Retrieving Google Music library")
+    log.info("Retrieving Google Music library")
     g.library = get_google_library(g)
 
     return g
@@ -58,7 +64,7 @@ def login_spotify():
     token = util.prompt_for_user_token(config.auth['SPOTIFY_EMAIL'], scope)
 
     if not token:
-        logging.error("Invalid Spotify token; exiting.")
+        log.error("Invalid Spotify token; exiting.")
         sys.exit(1)
 
     s = Spotify(auth=token)
@@ -82,7 +88,7 @@ def transfer_playlist(g, s, playlist):
                or s.user_playlist_create(s.username, name)
 
     action = "Updating" if name in s.playlists else "Creating"
-    logging.info("%s playlist '%s'" % (action, name))
+    log.info("%s playlist '%s'" % (action, name))
 
     # Find Spotify track IDs for each new song
     tasks = []
@@ -98,7 +104,7 @@ def transfer_playlist(g, s, playlist):
         (track_ids if ok else not_found).append(track_info)
 
     for nf in not_found:
-        logging.warning("Track not found for '%s': '%s'" % (name, nf))
+        log.warning("Track not found for '%s': '%s'" % (name, nf))
 
     # Filter for songs not yet synchronized to Spotify
     spotlist_info = s.user_playlist(s.username, playlist_id=spotlist['id'])
@@ -106,7 +112,7 @@ def transfer_playlist(g, s, playlist):
     new_ids = [x for x in track_ids if x not in spotlist_tracks]
 
     # Add new songs!!!
-    logging.info("Adding %d new tracks to '%s'!!!!!!" % (len(new_ids), name))
+    log.info("Adding %d new tracks to '%s'!!!!!!" % (len(new_ids), name))
     for group in chunker(new_ids, 100):
         s.user_playlist_add_tracks(s.username, spotlist['id'], group)
 
