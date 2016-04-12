@@ -13,11 +13,21 @@ formatter = logging.Formatter("%(asctime)s;%(levelname)s;%(message)s",
                               datefmt="%Y-%m-%d %H:%M:%S")
 
 handler = logging.FileHandler('.log')
-handler.setLevel(logging.INFO)
 handler.setFormatter(formatter)
 
 log = logging.getLogger(__name__)
+log.setLevel(logging.INFO)
 log.addHandler(handler)
+
+re_title_feat = re.compile("(.*) \(feat\. (.*)\)")
+re_artist = [
+    re.compile("(.*) & (.*)"),
+    re.compile("(.*) ft\. (.*)"),
+    re.compile("(.*) vs (.*)"),
+    re.compile("(.*) - (.*)"),
+    re.compile("(.*) + (.*)"),
+    re.compile("(.*) / (.*)")
+]
 
 def strip_feat(s):
     return re.sub(r"\(feat.*\)", "", s)
@@ -120,34 +130,47 @@ def transfer_playlist(g, s, playlist):
 def find_track_id(g, s, track):
     """ Find Spotify ID for associated Google Music track """
 
-    name, artist = "", ""
+    if "title" not in track:
+        tid = track['trackId']
+        track = g.get_track_info(tid) if tid.startswith('T') \
+                else g.library(tid)
 
-    if "name" in track:
-        name = track['title']
-        artist = track['artist']
-    else:
-        if track['trackId'].startswith('T'):
-            # Retrieve store track info
-            tr = g.get_track_info(track['trackId'])
-            name = tr['title']
-            artist = tr['artist']
-        else:
-            # Retrieve personal track info
-            name = g.library[track['trackId']]['title']
-            artist = g.library[track['trackId']]['artist']
+    name, artist = track['title'], track['artist']
 
     results = s.search('track:%s artist:%s' % (name, artist))['tracks']['items']
     if results:
         return (True, results[0]['id'])
     else:
         # Spotify and Google Music handle collaborations differently :(
-        name = strip_feat(name)
-        artist = strip_feat(strip_amp(artist))
-        results = s.search('track:%s artist:%s' % (name, artist))['tracks']['items']
-        if results:
-            return (True, results[0]['id'])
-        else:
-            return (False, "%s - %s" % (name, artist))
+        names, artists = extract_track_matches(name, artist)
+        for name in names:
+            for artist in artists:
+                results = s.search('track:%s artist:%s' % (name, artist))['tracks']['items']
+                if results:
+                    return (True, results[0]['id'])
+
+        return (False, "%s - %s" % (name, artist))
+
+def extract_track_matches(name, artist):
+    """ Find base titles and collaboration artists """
+    names, artists = [], []
+    names.append(name)
+    artists.append(artist)
+
+    # Strip from title
+    res = re_title_feat.search(name)
+    if res:
+        names.append(res.group(1))
+        artists.append(res.group(2))
+
+    # Strip from artist
+    for regex in re_artist:
+        res = regex.search(artist)
+        if res:
+            artists.append(res.group(1))
+            artists.append(res.group(2))
+
+    return names, artists
 
 def main():
 
