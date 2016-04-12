@@ -29,14 +29,26 @@ re_artist = [
     re.compile("(.*) / (.*)")
 ]
 
-def strip_feat(s):
-    return re.sub(r"\(feat.*\)", "", s)
+def extract_track_matches(name, artist):
+    """ Find base titles and collaboration artists """
+    names, artists = [], []
+    names.append(name)
+    artists.append(artist)
 
-def strip_ft(s):
-    return re.sub(r"ft\. .*", "", s)
+    # Strip from title
+    res = re_title_feat.search(name)
+    if res:
+        names.append(res.group(1))
+        artists.append(res.group(2))
 
-def strip_amp(s):
-    return re.sub("&.*", "", s)
+    # Strip from artist
+    for regex in re_artist:
+        res = regex.search(artist)
+        if res:
+            artists.append(res.group(1))
+            artists.append(res.group(2))
+
+    return names, artists
 
 def chunker(seq, size):
     return (seq[pos:pos + size] for pos in range(0, len(seq), size))
@@ -150,27 +162,6 @@ def find_track_id(g, s, track):
                     return (True, results[0]['id'])
 
         return (False, "%s - %s" % (name, artist))
-
-def extract_track_matches(name, artist):
-    """ Find base titles and collaboration artists """
-    names, artists = [], []
-    names.append(name)
-    artists.append(artist)
-
-    # Strip from title
-    res = re_title_feat.search(name)
-    if res:
-        names.append(res.group(1))
-        artists.append(res.group(2))
-
-    # Strip from artist
-    for regex in re_artist:
-        res = regex.search(artist)
-        if res:
-            artists.append(res.group(1))
-            artists.append(res.group(2))
-
-    return names, artists
 
 def main():
 
