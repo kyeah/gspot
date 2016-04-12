@@ -1,5 +1,6 @@
 import asyncio
 import config
+import json
 import logging
 import re
 import spotipy.util as util
@@ -129,8 +130,14 @@ def transfer_playlist(g, s, playlist):
         log.warning("Track not found for '%s': '%s'" % (name, nf))
 
     # Filter for songs not yet synchronized to Spotify
-    spotlist_info = s.user_playlist(s.username, playlist_id=spotlist['id'])
-    spotlist_tracks = [x['track']['id'] for x in spotlist_info['tracks']['items']]
+    spotlist_info = s.user_playlist(s.username, playlist_id=spotlist['id'], fields="tracks,next")
+
+    tracks = spotlist_info['tracks']
+    spotlist_tracks = [x['track']['id'] for x in tracks['items']]
+    while tracks['next']:
+        tracks = s.next(tracks)
+        spotlist_tracks += [x['track']['id'] for x in tracks['items']]
+
     new_ids = [x for x in track_ids if x not in spotlist_tracks]
 
     # Add new songs!!!
@@ -145,7 +152,7 @@ def find_track_id(g, s, track):
     if "title" not in track:
         tid = track['trackId']
         track = g.get_track_info(tid) if tid.startswith('T') \
-                else g.library(tid)
+                else g.library[tid]
 
     name, artist = track['title'], track['artist']
 
