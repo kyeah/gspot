@@ -1,4 +1,6 @@
-import asyncio
+from gevent import monkey
+monkey.patch_all()
+
 import config
 import json
 import logging
@@ -7,6 +9,7 @@ import spotipy.util as util
 import sys
 
 from getpass import getpass
+from gevent.pool import Group
 from gmusicapi import Mobileclient
 from spotipy import Spotify
 
@@ -101,7 +104,6 @@ def login_spotify():
 
     return s
 
-@asyncio.coroutine
 def transfer_playlist(g, s, playlist):
     """ Synchronize Google Music playlist to Spotify """
     
@@ -114,13 +116,11 @@ def transfer_playlist(g, s, playlist):
     log.info("%s playlist '%s'" % (action, name))
 
     # Find Spotify track IDs for each new song
-    tasks = []
-    for track in playlist['tracks']:
-        if float(track['creationTimestamp']) > float(config.since):
-            task = asyncio.Task(find_track_id(g, s, track))
-            tasks.append(task)
+    tasks = [(g, s, track) for track in playlist['tracks']
+             if float(track['creationTimestamp']) > float(config.since)]
 
-    results = yield from asyncio.gather(*tasks)
+    pool = Group()
+    results = pool.map(lambda args: find_track_id(*args), tasks)
 
     track_ids, not_found = [], []
     for (ok, track_info) in results:
@@ -145,7 +145,6 @@ def transfer_playlist(g, s, playlist):
     for group in chunker(new_ids, 100):
         s.user_playlist_add_tracks(s.username, spotlist['id'], group)
 
-@asyncio.coroutine
 def find_track_id(g, s, track):
     """ Find Spotify ID for associated Google Music track """
 
@@ -156,7 +155,13 @@ def find_track_id(g, s, track):
 
     name, artist = track['title'], track['artist']
 
-    results = s.search('track:%s artist:%s' % (name, artist))['tracks']['items']
+    results = None
+    res = s.search('track:%s artist:%s' % (name, artist))
+    try:
+        results = res['tracks']['items']
+    except:
+        log.error('Results are None: %s, %s' % (name, artist))
+
     if results:
         return (True, results[0]['id'])
     else:
@@ -164,7 +169,13 @@ def find_track_id(g, s, track):
         names, artists = extract_track_matches(name, artist)
         for name in names:
             for artist in artists:
-                results = s.search('track:%s artist:%s' % (name, artist))['tracks']['items']
+                results = None
+                res = s.search('track:%s artist:%s' % (name, artist))
+                try:
+                    results = res['tracks']['items']
+                except:
+                    log.error('Results are None: %s, %s' % (name, artist))
+
                 if results:
                     return (True, results[0]['id'])
 
@@ -183,14 +194,9 @@ def main():
                    and float(p['lastModifiedTimestamp']) > float(config.since)]
 
     # Transfer playlists
-    tasks = []
-    for playlist in g.playlists:
-        future = asyncio.ensure_future(transfer_playlist(g, s, playlist))
-        tasks.append(future)
-
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(asyncio.wait(tasks))
-    loop.close()
+    tasks = [(g, s, playlist) for playlist in g.playlists]
+    pool = Group()
+    pool.map(lambda args: transfer_playlist(*args), tasks)
 
 if __name__ == '__main__':
     main()
