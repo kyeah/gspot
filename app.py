@@ -23,7 +23,10 @@ log = logging.getLogger(__name__)
 log.setLevel(logging.INFO)
 log.addHandler(handler)
 
-re_title_feat = re.compile("(.*) \(feat\. (.*)\)")
+re_title = [
+    re.compile("(.*) \(feat\. (.*)\)"),
+    re.compile("(.*) featuring (.*)")
+]
 re_artist = [
     re.compile("(.*) & (.*)"),
     re.compile("(.*) ft\. (.*)"),
@@ -40,10 +43,11 @@ def extract_track_matches(name, artist):
     artists.append(artist)
 
     # Strip from title
-    res = re_title_feat.search(name)
-    if res:
-        names.append(res.group(1))
-        artists.append(res.group(2))
+    for regex in re_title:
+        res = regex.search(name)
+        if res:
+            names.append(res.group(1))
+            artists.append(res.group(2))
 
     # Strip from artist
     for regex in re_artist:
